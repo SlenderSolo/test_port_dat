@@ -54,7 +54,6 @@ jobs:
           git clone --depth=1 https://github.com/v2fly/domain-list-community.git geosite-tool
           cd geosite-tool
           go run ./ --datapath=../geosite-source/data
-          # Исправлено: инструмент создает dlc.dat
           mv dlc.dat ../geosite.dat
           cd ..
 
@@ -62,9 +61,27 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/v2fly/geoip.git geoip-tool
           cd geoip-tool
-          go run ./ --input=../geoip-source/data
-          # Инструмент geoip обычно создает geoip.dat, переносим его
-          mv geoip.dat ../geoip.dat
+          
+          # Автоматическая генерация config.json для сборщика geoip
+          echo '{"input": [' > config.json
+          
+          # Собираем все подготовленные файлы IP
+          FILES=($(ls ../geoip-source/data/))
+          for i in "${!FILES[@]}"; do
+            NAME="${FILES[$i]}"
+            FILE_PATH="../geoip-source/data/$NAME"
+            echo "{\"type\": \"text\", \"action\": \"add\", \"args\": {\"name\": \"$NAME\", \"uri\": \"$FILE_PATH\"}}" >> config.json
+            # Добавляем запятую между объектами, если это не последний файл
+            if [ $i -lt $((${#FILES[@]} - 1)) ]; then
+              echo "," >> config.json
+            fi
+          done
+          
+          # Добавляем настройки вывода (output)
+          echo '], "output": [{"type": "v2rayGeoIPDat", "action": "output", "args": {"outputDir": "../", "outputName": "geoip.dat"}}]}' >> config.json
+          
+          # Запускаем сборку с созданным конфигом
+          go run ./ -c config.json
           cd ..
 
       - name: Generate SHA256

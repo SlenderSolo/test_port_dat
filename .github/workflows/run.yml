@@ -1,0 +1,97 @@
+name: Build ITDog Rules
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set variables
+        run: |
+          echo "TAG_NAME=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+          echo "RELEASE_NAME=Released on $(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Checkout your repo
+        uses: actions/checkout@v4
+
+      - name: Clone itdoginfo/allow-domains
+        run: |
+          git clone --depth=1 https://github.com/itdoginfo/allow-domains.git itdog-source
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.21'
+
+      - name: Prepare Geosite Data
+        run: |
+          mkdir -p ./geosite-source/data
+          if [ -d "itdog-source/Services" ]; then
+            find itdog-source/Services -name "*.lst" | while read file; do
+              filename=$(basename "$file" .lst | tr '[:upper:]' '[:lower:]')
+              cp "$file" "./geosite-source/data/$filename"
+            done
+          fi
+
+      - name: Prepare GeoIP Data
+        run: |
+          mkdir -p ./geoip-source/data
+          if [ -d "itdog-source/Subnets/IPv4" ]; then
+            find itdog-source/Subnets/IPv4 -name "*.lst" | while read file; do
+              filename=$(basename "$file" .lst | tr '[:upper:]' '[:lower:]')
+              cp "$file" "./geoip-source/data/$filename"
+            done
+          fi
+
+      - name: Build geosite.dat
+        run: |
+          git clone --depth=1 https://github.com/v2fly/domain-list-community.git geosite-tool
+          cd geosite-tool
+          go run ./ --datapath=../geosite-source/data
+          mv geosite.dat ../geosite.dat
+          cd ..
+
+      - name: Build geoip.dat
+        run: |
+          git clone --depth=1 https://github.com/v2fly/geoip.git geoip-tool
+          cd geoip-tool
+          go run ./ --input=../geoip-source/data
+          mv geoip.dat ../geoip.dat
+          cd ..
+
+      - name: Generate SHA256
+        run: |
+          sha256sum geosite.dat > geosite.dat.sha256sum
+          sha256sum geoip.dat > geoip.dat.sha256sum
+
+      - name: Move to publish directory
+        run: |
+          mkdir -p ./publish
+          mv geosite.dat geosite.dat.sha256sum geoip.dat geoip.dat.sha256sum ./publish/
+
+      - name: Release and upload assets
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          release_name: ${{ env.RELEASE_NAME }}
+          tag: ${{ env.TAG_NAME }}
+          file_glob: true
+          file: ./publish/*
+
+      - name: Push to release branch
+        run: |
+          cd publish
+          git init
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b release
+          git add .
+          git commit -m "Update rules ${{ env.TAG_NAME }}"
+          git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git push -f -u origin release

@@ -1,11 +1,11 @@
 name: Build ITDog Rules
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *"
   push:
     branches:
       - main
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
   build:
@@ -54,7 +54,8 @@ jobs:
           git clone --depth=1 https://github.com/v2fly/domain-list-community.git geosite-tool
           cd geosite-tool
           go run ./ --datapath=../geosite-source/data
-          mv geosite.dat ../geosite.dat
+          # Исправлено: инструмент создает dlc.dat
+          mv dlc.dat ../geosite.dat
           cd ..
 
       - name: Build geoip.dat
@@ -62,6 +63,7 @@ jobs:
           git clone --depth=1 https://github.com/v2fly/geoip.git geoip-tool
           cd geoip-tool
           go run ./ --input=../geoip-source/data
+          # Инструмент geoip обычно создает geoip.dat, переносим его
           mv geoip.dat ../geoip.dat
           cd ..
 
